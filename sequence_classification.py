@@ -10,7 +10,6 @@ from transformers import (
     Trainer,
     DataCollatorWithPadding
 )
-
 import evaluate
 from fire import Fire
 
@@ -18,8 +17,8 @@ accuracy = evaluate.load("accuracy")
 f1 = evaluate.load("f1")
 
 
-def preprocess_function(examples, tokenizer):
-    return tokenizer(examples["text"], truncation=True)
+def preprocess_function(examples, tokenizer, text_col="text"):
+    return tokenizer(examples[text_col], truncation=True)
 
 
 def compute_metrics(eval_pred):
@@ -28,7 +27,7 @@ def compute_metrics(eval_pred):
     results = {
         **accuracy.compute(predictions=predictions, references=labels),
         **{
-            f"f1_{average}": f1.compute(predictions=predictions, references=labels, average="macro")["f1"]
+            f"f1_{average}": f1.compute(predictions=predictions, references=labels, average=average)["f1"]
             for average in ["macro", "micro", "weighted"]
         }
     }
@@ -39,6 +38,7 @@ def main(
     *,
     dataset_checkpoint: str,
     model_checkpoint: str,
+    text_col: str = "text",
     label_col: str = "label",
     train_subset: str = "train",
     val_subset: str | None = None,
@@ -51,6 +51,7 @@ def main(
     overfit_batch=False,
     metric_for_best_model="f1_micro"
 ):
+    params = locals()
     dataset = load_dataset(dataset_checkpoint)
     # print((val_subset is None or label_col in dataset[val_subset]))
     # print(dataset[train_subset].features)
@@ -82,20 +83,23 @@ def main(
             dataset[test_subset] = dataset[test_subset].select(list(range(eval_batch_size)))
 
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-    tokenized_dataset = dataset.map(partial(preprocess_function, tokenizer=tokenizer), batched=True)
+    tokenized_dataset = dataset.map(partial(preprocess_function, tokenizer=tokenizer, text_col=text_col), batched=True)
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     model = AutoModelForSequenceClassification.from_pretrained(
         model_checkpoint, num_labels=num_labels
     )
+    run_name = f"{model_checkpoint}_{dataset_checkpoint}".replace("/", "-")
     training_args = TrainingArguments(
-        output_dir=f"{model_checkpoint}_{dataset_checkpoint}".replace("/", "-"),
+        run_name=run_name,
+        output_dir=f"./logs/{run_name}",
         learning_rate=lr,
         per_device_train_batch_size=train_batch_size,
         per_device_eval_batch_size=eval_batch_size,
         num_train_epochs=n_epochs,
         weight_decay=0.01,
+        save_total_limit=1,
         evaluation_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
@@ -115,7 +119,13 @@ def main(
 
     trainer.train()
     if test_subset is not None:
-        print("Test metrics: ", trainer.evaluate(eval_dataset=tokenized_dataset[test_subset]))
+        test_metrics = trainer.evaluate(eval_dataset=tokenized_dataset[test_subset], metric_key_prefix="test")
+        print("Test metrics: ", test_metrics)
+        if report_to == "wandb":
+            import wandb
+            for k, v in params.items():
+                wandb.config[k] = v
+            wandb.log(test_metrics)
 
 
 if __name__ == "__main__":
