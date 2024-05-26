@@ -1,7 +1,10 @@
 from __future__ import annotations
+import os
+import shutil
 from functools import partial
 
 import numpy as np
+import datasets
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
@@ -18,7 +21,7 @@ f1 = evaluate.load("f1")
 
 
 def preprocess_function(examples, tokenizer, text_col="text"):
-    return tokenizer(examples[text_col], truncation=True)
+    return tokenizer(examples[text_col], truncation=True, max_length=512)
 
 
 def compute_metrics(eval_pred):
@@ -52,7 +55,12 @@ def main(
     metric_for_best_model="f1_micro"
 ):
     params = locals()
-    dataset = load_dataset(dataset_checkpoint)
+    if os.path.exists(dataset_checkpoint):
+        dataset= datasets.load_from_disk(dataset_checkpoint)
+    else:
+        dataset = load_dataset(dataset_checkpoint)
+    dataset = dataset.rename_columns({label_col: "label"})
+    label_col = "label"
     # print((val_subset is None or label_col in dataset[val_subset]))
     # print(dataset[train_subset].features)
     # print(
@@ -91,9 +99,10 @@ def main(
         model_checkpoint, num_labels=num_labels
     )
     run_name = f"{model_checkpoint}_{dataset_checkpoint}".replace("/", "-")
+    output_dir = f"./logs/{run_name}"
     training_args = TrainingArguments(
         run_name=run_name,
-        output_dir=f"./logs/{run_name}",
+        output_dir=output_dir,
         learning_rate=lr,
         per_device_train_batch_size=train_batch_size,
         per_device_eval_batch_size=eval_batch_size,
@@ -103,6 +112,7 @@ def main(
         evaluation_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
+        gradient_accumulation_steps=32 // train_batch_size,
         report_to=report_to,
         metric_for_best_model=metric_for_best_model
     )
@@ -126,6 +136,7 @@ def main(
             for k, v in params.items():
                 wandb.config[k] = v
             wandb.log(test_metrics)
+    shutil.rmtree(output_dir)
 
 
 if __name__ == "__main__":

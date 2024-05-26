@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import RandomizedSearchCV
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import PredefinedSplit
 from sklearn.model_selection import RandomizedSearchCV
 from fire import Fire
@@ -18,19 +18,19 @@ from fire import Fire
 from sequence_classification import compute_metrics
 
 boost_params = {
-    "mod": [GradientBoostingRegressor()],
-    "mod__loss": ["squared_error"],
+    "mod": [GradientBoostingClassifier()],
+    "mod__loss": ["log_loss"],
     "mod__max_depth": [6],
     "mod__learning_rate": [0.01],
     "mod__n_estimators": [100, 200, 500, 1000],
-    "mod__subsample": [0, 0.5],
+    "mod__subsample": [0.01, 0.5, 1],
     'enc__max_features': [100, 500, 1000, 2000, 5000, 10000],
     'enc__stop_words': [None, "english"],
     'enc__ngram_range': [(1, 1), (1, 2), (2, 2)],
 }
 
 forest_params ={
-    "mod": [RandomForestRegressor()],  
+    "mod": [RandomForestClassifier()],  
     "mod__max_depth": [10, 15],
     "mod__min_samples_split": [10, 20, 30],
     "mod__n_estimators": [100, 200, 500, 1000],
@@ -124,7 +124,7 @@ def main(
         test_df = dataset[test_subset].to_pandas()
         X_test = test_df[text_col]
         y_test = test_df[label_col]
-        test_metrics = compute_metrics((grid.predict_proba(X_test), y_test))
+        test_metrics = compute_metrics((grid.best_estimator_.predict_proba(X_test), y_test))
         print("Test metrics: ", test_metrics)
         if report_to == "wandb":
             import wandb
