@@ -1,4 +1,6 @@
 
+Метрики доступны: https://wandb.ai/levmorozov900/sentiment-analysis/overview
+
 [Ноутбук с предобработкой данных и вузализацией](./notebooks/preprocess.ipynb)
 
 Команды для обучения BERT моделей на трех наборах данных:
